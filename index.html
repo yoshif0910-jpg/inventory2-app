@@ -41,6 +41,7 @@
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 10px;
+      margin-bottom: 16px;
     }
     .stat {
       background: #fff;
@@ -77,7 +78,10 @@
       padding: 12px;
       font-size: 14px;
     }
-    textarea { min-height: 72px; resize: vertical; }
+    textarea {
+      min-height: 72px;
+      resize: vertical;
+    }
     button {
       background: #0f62fe;
       color: #fff;
@@ -148,7 +152,16 @@
       overflow: hidden;
       border-radius: 12px;
     }
-    .hidden { display: none; }
+    .hidden {
+      display: none;
+    }
+    #testResults {
+      margin-top: 8px;
+      white-space: pre-wrap;
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 10px;
+    }
     @media (max-width: 640px) {
       .stats, .row {
         grid-template-columns: 1fr;
@@ -190,10 +203,10 @@
         </div>
         <div>
           <label>分類</label>
-          <select id="category">
+          <select id="category" onchange="updateSubCategory()">
             <option>洗剤</option>
-            <option>柔軟剤</option>
-            <option>漂白剤</option>
+            <option>日用品</option>
+            <option>食料品</option>
             <option>その他</option>
           </select>
         </div>
@@ -201,23 +214,36 @@
 
       <div class="row" style="margin-top:10px;">
         <div>
+          <label>洗剤種類</label>
+          <select id="subCategory">
+            <option>アタック</option>
+            <option>レノア</option>
+            <option>レノアクエン酸IN</option>
+            <option>ハイター</option>
+          </select>
+        </div>
+        <div></div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <div>
           <label>現在庫</label>
-          <input id="stock" type="number" value="1" />
+          <input id="stock" type="number" value="1" min="0" />
         </div>
         <div>
           <label>最低在庫</label>
-          <input id="minStock" type="number" value="1" />
+          <input id="minStock" type="number" value="1" min="0" />
         </div>
       </div>
 
       <div class="row" style="margin-top:10px;">
         <div>
           <label>価格（円）</label>
-          <input id="price" type="number" placeholder="例：2033" />
+          <input id="price" type="number" placeholder="例：2033" min="0" />
         </div>
         <div>
           <label>内容量</label>
-          <input id="volume" type="number" placeholder="例：2000" />
+          <input id="volume" type="number" placeholder="例：2000" min="0" />
         </div>
       </div>
 
@@ -262,7 +288,7 @@
           <button class="danger" onclick="stopScanner()">読取を止める</button>
         </div>
         <p class="muted" id="scanMessage">カメラを起動中です</p>
-      <p class="muted" id="lookupMessage"></p>
+        <p class="muted" id="lookupMessage"></p>
       </div>
     </div>
 
@@ -274,6 +300,14 @@
     <div class="card">
       <h2 style="margin-top:0;">在庫一覧</h2>
       <div id="itemList"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;">自己テスト</h2>
+      <div class="button-row">
+        <button class="secondary" onclick="runSelfTests()">テスト実行</button>
+      </div>
+      <div id="testResults" class="muted">未実行</div>
     </div>
   </div>
 
@@ -287,7 +321,7 @@
       {
         id: crypto.randomUUID(),
         name: 'アタックZERO',
-        category: '洗剤',
+        category: '洗剤-アタック',
         stock: 2,
         minStock: 1,
         price: 2033,
@@ -299,8 +333,8 @@
       },
       {
         id: crypto.randomUUID(),
-        name: 'レノア 超消臭1WEEK 極やわ仕上げ',
-        category: '柔軟剤',
+        name: 'レノア クエン酸IN',
+        category: '洗剤-レノアクエン酸IN',
         stock: 1,
         minStock: 1,
         price: 548,
@@ -308,12 +342,12 @@
         unitSize: 1,
         volumeUnit: 'mL',
         barcode: '',
-        memo: 'ふんわりブロッサム'
+        memo: 'クエン酸IN'
       },
       {
         id: crypto.randomUUID(),
         name: 'ワイドハイターEX',
-        category: '漂白剤',
+        category: '洗剤-ハイター',
         stock: 1,
         minStock: 1,
         price: 1265,
@@ -330,10 +364,12 @@
       if (saved) {
         try {
           items = JSON.parse(saved);
-          return;
+          if (Array.isArray(items)) {
+            return;
+          }
         } catch (e) {}
       }
-      items = defaultItems;
+      items = structuredClone(defaultItems);
       saveItemsToStorage();
     }
 
@@ -350,12 +386,21 @@
       return value.toFixed(2);
     }
 
+    function formatCategory(category) {
+      if (!category) return 'その他';
+      if (category.includes('-')) {
+        const parts = category.split('-');
+        return `${parts[0]} (${parts[1]})`;
+      }
+      return category;
+    }
+
     function render() {
       const itemList = document.getElementById('itemList');
       const shoppingList = document.getElementById('shoppingList');
       itemList.innerHTML = '';
 
-      const lowItems = items.filter(item => Number(item.stock) <= Number(item.minStock));
+      const lowItems = items.filter((item) => Number(item.stock) <= Number(item.minStock));
       const totalStock = items.reduce((sum, item) => sum + Number(item.stock || 0), 0);
 
       document.getElementById('statItems').textContent = items.length;
@@ -365,7 +410,7 @@
       if (lowItems.length === 0) {
         shoppingList.innerHTML = '<div class="muted">買い足しが必要な商品はありません</div>';
       } else {
-        shoppingList.innerHTML = lowItems.map(item => `
+        shoppingList.innerHTML = lowItems.map((item) => `
           <div class="item">
             <strong>${escapeHtml(item.name)}</strong><br>
             <span class="muted">現在庫 ${item.stock} / 最低在庫 ${item.minStock}</span>
@@ -373,7 +418,7 @@
         `).join('');
       }
 
-      items.forEach(item => {
+      items.forEach((item) => {
         const low = Number(item.stock) <= Number(item.minStock);
         const unitText = `${item.unitSize}${item.volumeUnit}あたり`;
         const div = document.createElement('div');
@@ -382,7 +427,7 @@
           <div class="item-top">
             <div>
               <h3>${escapeHtml(item.name)}</h3>
-              <span class="badge">${escapeHtml(item.category)}</span>
+              <span class="badge">${escapeHtml(formatCategory(item.category))}</span>
               ${low ? '<span class="badge low">在庫少</span>' : ''}
             </div>
             <div><strong>在庫 ${item.stock}</strong></div>
@@ -406,10 +451,12 @@
     }
 
     function getFormData() {
+      const category = document.getElementById('category').value;
+      const subCategory = document.getElementById('subCategory').value;
       return {
         id: editingId || crypto.randomUUID(),
         name: document.getElementById('name').value.trim(),
-        category: document.getElementById('category').value,
+        category: category === '洗剤' ? `${category}-${subCategory}` : category,
         stock: Number(document.getElementById('stock').value || 0),
         minStock: Number(document.getElementById('minStock').value || 0),
         price: Number(document.getElementById('price').value || 0),
@@ -444,24 +491,22 @@
 
         const data = await response.json();
         if (data && Array.isArray(data.items) && data.items.length > 0) {
-          const item = data.items[0];
-          if (item.title && !document.getElementById('name').value.trim()) {
-            document.getElementById('name').value = item.title;
+          const resultItem = data.items[0];
+          if (resultItem.title && !document.getElementById('name').value.trim()) {
+            document.getElementById('name').value = resultItem.title;
           }
-          if (item.brand) {
+          if (resultItem.brand) {
             const currentMemo = document.getElementById('memo').value.trim();
             if (!currentMemo.includes('ブランド:')) {
               document.getElementById('memo').value = currentMemo
-                ? `${currentMemo}
-ブランド: ${item.brand}`
-                : `ブランド: ${item.brand}`;
+                ? `${currentMemo}\nブランド: ${resultItem.brand}`
+                : `ブランド: ${resultItem.brand}`;
             }
           }
           message.textContent = '商品名を取得しました';
           return;
         }
-      } catch (e) {
-      }
+      } catch (e) {}
 
       try {
         const offResponse = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
@@ -476,8 +521,7 @@
           message.textContent = '商品名を取得しました（食品データベース）';
           return;
         }
-      } catch (e) {
-      }
+      } catch (e) {}
 
       message.textContent = '商品名を見つけられませんでした。手入力してください';
     }
@@ -488,7 +532,7 @@
         alert('商品名を入力してください');
         return;
       }
-      const index = items.findIndex(x => x.id === item.id);
+      const index = items.findIndex((x) => x.id === item.id);
       if (index >= 0) {
         items[index] = item;
       } else {
@@ -500,19 +544,31 @@
     }
 
     function editItem(id) {
-      const item = items.find(x => x.id === id);
+      const item = items.find((x) => x.id === id);
       if (!item) return;
+
       editingId = id;
+      let category = item.category || '洗剤';
+      let sub = 'アタック';
+
+      if (category.includes('-')) {
+        const parts = category.split('-');
+        category = parts[0];
+        sub = parts[1] || 'アタック';
+      }
+
       document.getElementById('name').value = item.name || '';
-      document.getElementById('category').value = item.category || '洗剤';
-      document.getElementById('stock').value = item.stock || 0;
-      document.getElementById('minStock').value = item.minStock || 0;
-      document.getElementById('price').value = item.price || 0;
-      document.getElementById('volume').value = item.volume || 0;
-      document.getElementById('unitSize').value = item.unitSize || 1;
+      document.getElementById('category').value = category;
+      document.getElementById('subCategory').value = sub;
+      document.getElementById('stock').value = item.stock ?? 0;
+      document.getElementById('minStock').value = item.minStock ?? 0;
+      document.getElementById('price').value = item.price ?? '';
+      document.getElementById('volume').value = item.volume ?? '';
+      document.getElementById('unitSize').value = item.unitSize ?? 1;
       document.getElementById('volumeUnit').value = item.volumeUnit || 'mL';
       document.getElementById('barcode').value = item.barcode || '';
       document.getElementById('memo').value = item.memo || '';
+      updateSubCategory();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -520,6 +576,7 @@
       editingId = null;
       document.getElementById('name').value = '';
       document.getElementById('category').value = '洗剤';
+      document.getElementById('subCategory').value = 'アタック';
       document.getElementById('stock').value = 1;
       document.getElementById('minStock').value = 1;
       document.getElementById('price').value = '';
@@ -528,10 +585,12 @@
       document.getElementById('volumeUnit').value = 'mL';
       document.getElementById('barcode').value = '';
       document.getElementById('memo').value = '';
+      document.getElementById('lookupMessage').textContent = '';
+      updateSubCategory();
     }
 
     function changeStock(id, amount) {
-      const item = items.find(x => x.id === id);
+      const item = items.find((x) => x.id === id);
       if (!item) return;
       item.stock = Math.max(0, Number(item.stock) + amount);
       saveItemsToStorage();
@@ -540,7 +599,7 @@
 
     function deleteItem(id) {
       if (!confirm('削除しますか？')) return;
-      items = items.filter(x => x.id !== id);
+      items = items.filter((x) => x.id !== id);
       saveItemsToStorage();
       render();
     }
@@ -567,7 +626,7 @@
           (decodedText) => {
             document.getElementById('barcode').value = decodedText;
             message.textContent = '読み取り成功: ' + decodedText;
-            const matched = items.find(item => item.barcode === decodedText);
+            const matched = items.find((item) => item.barcode === decodedText);
             if (matched) {
               message.textContent += ' / 既存商品に一致: ' + matched.name;
             }
@@ -583,7 +642,7 @@
     async function stopScanner() {
       const box = document.getElementById('scannerBox');
       try {
-        if (html5QrCode && html5QrCode.isScanning) {
+        if (html5QrCode) {
           await html5QrCode.stop();
           await html5QrCode.clear();
           html5QrCode = null;
@@ -602,8 +661,38 @@
         .replace(/'/g, '&#039;');
     }
 
+    function updateSubCategory() {
+      const category = document.getElementById('category').value;
+      const sub = document.getElementById('subCategory');
+      sub.disabled = category !== '洗剤';
+    }
+
+    function runSelfTests() {
+      const results = [];
+      function assert(condition, message) {
+        if (!condition) {
+          throw new Error(message);
+        }
+        results.push('OK: ' + message);
+      }
+
+      try {
+        assert(calcUnitPrice({ price: 2000, volume: 2000, unitSize: 1 }) === '1.00', '最小単位あたり単価を正しく計算する');
+        assert(calcUnitPrice({ price: 2000, volume: 2000, unitSize: 10 }) === '10.00', '10単位あたり単価を正しく計算する');
+        assert(formatCategory('洗剤-レノア') === '洗剤 (レノア)', '分類表示を整形する');
+        assert(formatCategory('その他') === 'その他', 'その他分類をそのまま表示する');
+        const sample = { id: '1', name: 'テスト', category: '洗剤-アタック', stock: 1, minStock: 1, price: 100, volume: 100, unitSize: 1, volumeUnit: 'mL', barcode: '', memo: '' };
+        assert(sample.category.includes('-'), '洗剤分類は詳細分類を保持する');
+        document.getElementById('testResults').textContent = results.join('\n');
+      } catch (error) {
+        document.getElementById('testResults').textContent = 'NG: ' + error.message + '\n' + results.join('\n');
+      }
+    }
+
     loadItems();
+    updateSubCategory();
     render();
+    runSelfTests();
   </script>
 </body>
 </html>

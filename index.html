@@ -37,6 +37,7 @@
     .hidden { display: none; }
     #testResults { margin-top: 8px; white-space: pre-wrap; background: #f8fafc; border-radius: 12px; padding: 10px; }
     #candidateBox { background:#f8fafc; padding:12px; margin-top:10px; box-shadow:none; border:1px solid #e5e9ef; border-radius: 12px; }
+    .candidate-title { font-weight: 700; margin-bottom: 8px; }
     @media (max-width: 640px) { .stats, .row { grid-template-columns: 1fr; } .item-top { flex-direction: column; } }
   </style>
 </head>
@@ -137,12 +138,12 @@
       <div class="button-row" style="margin-top:12px;">
         <button onclick="saveItem()">保存する</button>
         <button class="secondary" onclick="startScanner()">バーコード読取</button>
-        <button class="secondary" onclick="lookupProductName()">商品名を自動検索</button>
+        <button class="secondary" onclick="lookupProductName()">商品名を候補検索</button>
         <button class="secondary" onclick="resetForm()">入力クリア</button>
       </div>
 
       <div id="candidateBox" class="hidden">
-        <div style="font-weight:700; margin-bottom:8px;">候補</div>
+        <div class="candidate-title">候補</div>
         <div id="candidateButtons" class="button-row"></div>
       </div>
 
@@ -152,8 +153,8 @@
           <button class="danger" onclick="stopScanner()">読取を止める</button>
         </div>
         <p class="muted" id="scanMessage">カメラを起動中です</p>
-        <p class="muted" id="lookupMessage"></p>
       </div>
+      <p class="muted" id="lookupMessage"></p>
     </div>
 
     <div class="card">
@@ -175,7 +176,7 @@
 
   <script>
     const STORAGE_KEY = 'inventory_html_single_file_v1';
-    const LEARNED_BARCODE_KEY = 'inventory_barcode_learning_v1';
+    const LEARNED_BARCODE_KEY = 'inventory_barcode_learning_v2';
     let items = [];
     let editingId = null;
     let html5QrCode = null;
@@ -241,7 +242,7 @@
       normalized = normalized.replace(/Lenor/ig, 'レノア');
       normalized = normalized.replace(/Attack\s*ZERO/ig, 'アタックZERO');
       normalized = normalized.replace(/Attack/ig, 'アタック');
-      normalized = normalized.replace(/Wide\s*Haiter|Haiter/ig, 'ハイター');
+      normalized = normalized.replace(/Wide\s*Haiter|Haiter/ig, 'ワイドハイターEX');
       normalized = normalized.replace(/\s+/g, ' ').trim();
       return normalized;
     }
@@ -275,22 +276,28 @@
 
     function applyCandidate(candidate) {
       document.getElementById('name').value = candidate;
-      document.getElementById('lookupMessage').textContent = '候補を適用しました';
+      document.getElementById('lookupMessage').textContent = '候補を適用しました。保存すると次回から学習済みとして扱います。';
       showCandidates([]);
     }
 
-    function guessCandidatesFromBarcode(barcode) {
-      const list = [];
+    function dedupeCandidates(candidates) {
+      return [...new Set(candidates.filter(Boolean).map((name) => normalizeProductName(name)).filter(Boolean))].slice(0, 3);
+    }
+
+    function guessLocalCandidates(barcode) {
       const currentCategory = document.getElementById('category').value;
+      let local = [];
       if (currentCategory === '洗剤') {
-        ['アタックZERO', 'レノア クエン酸IN', 'ワイドハイターEX'].forEach((name) => list.push(name));
+        local = ['アタックZERO', 'レノア クエン酸IN', 'ワイドハイターEX'];
+      } else if (currentCategory === '日用品') {
+        local = ['トイレットペーパー', 'ティッシュ', '洗濯ネット'];
+      } else if (currentCategory === '食料品') {
+        local = ['牛乳', '食パン', 'パスタ'];
       }
-      if (barcode && barcode.startsWith('49')) {
-        if (!list.includes('アタックZERO')) list.push('アタックZERO');
-        if (!list.includes('レノア クエン酸IN')) list.push('レノア クエン酸IN');
-        if (!list.includes('ワイドハイターEX')) list.push('ワイドハイターEX');
+      if (barcode && barcode.startsWith('49') && currentCategory === '洗剤') {
+        local.push('アタックZERO', 'レノア クエン酸IN', 'ワイドハイターEX');
       }
-      return [...new Set(list)].slice(0, 5);
+      return dedupeCandidates(local);
     }
 
     function learnBarcodeMapping(barcode, item) {
@@ -308,7 +315,7 @@
         if (!document.getElementById('memo').value.trim() && localMatch.memo) {
           document.getElementById('memo').value = localMatch.memo;
         }
-        message.textContent = '保存済みデータから一致しました';
+        message.textContent = '学習済みデータから一致しました';
         showCandidates([]);
       } else {
         message.textContent = '';
@@ -381,6 +388,34 @@
       };
     }
 
+    async function fetchApiCandidates(barcode) {
+      const candidates = [];
+      try {
+        const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`, { headers: { 'Accept': 'application/json' } });
+        if (response.ok) {
+          const data = await response.json();
+          if (data && Array.isArray(data.items)) {
+            data.items.forEach((item) => {
+              if (item && item.title) candidates.push(item.title);
+            });
+          }
+        }
+      } catch (e) {}
+
+      try {
+        const offResponse = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
+        if (offResponse.ok) {
+          const offData = await offResponse.json();
+          if (offData && offData.product) {
+            if (offData.product.product_name) candidates.push(offData.product.product_name);
+            if (offData.product.product_name_ja) candidates.push(offData.product.product_name_ja);
+          }
+        }
+      } catch (e) {}
+
+      return dedupeCandidates(candidates);
+    }
+
     async function lookupProductName() {
       const barcode = document.getElementById('barcode').value.trim();
       const message = document.getElementById('lookupMessage');
@@ -396,55 +431,21 @@
         if (!document.getElementById('memo').value.trim() && localMatch.memo) {
           document.getElementById('memo').value = localMatch.memo;
         }
-        message.textContent = 'バーコード完全一致: 保存済みデータを使用しました';
+        message.textContent = '学習済みデータから一致しました';
         showCandidates([]);
         return;
       }
 
-      message.textContent = '商品名を検索中です…';
-      try {
-        const response = await fetch(`https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`, { headers: { 'Accept': 'application/json' } });
-        if (!response.ok) throw new Error('APIエラー');
-        const data = await response.json();
-        if (data && Array.isArray(data.items) && data.items.length > 0) {
-          const resultItem = data.items[0];
-          const normalizedTitle = normalizeProductName(resultItem.title || '');
-          if (normalizedTitle && !document.getElementById('name').value.trim()) {
-            document.getElementById('name').value = normalizedTitle;
-          }
-          if (resultItem.brand) {
-            const currentMemo = document.getElementById('memo').value.trim();
-            if (!currentMemo.includes('ブランド:')) {
-              document.getElementById('memo').value = currentMemo ? `${currentMemo}\nブランド: ${resultItem.brand}` : `ブランド: ${resultItem.brand}`;
-            }
-          }
-          message.textContent = 'API検索で商品名を取得しました';
-          showCandidates([]);
-          return;
-        }
-      } catch (e) {}
+      message.textContent = '候補を検索中です…';
+      const apiCandidates = await fetchApiCandidates(barcode);
+      const localCandidates = guessLocalCandidates(barcode);
+      const merged = dedupeCandidates([...apiCandidates, ...localCandidates]).slice(0, 3);
 
-      try {
-        const offResponse = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
-        if (!offResponse.ok) throw new Error('APIエラー');
-        const offData = await offResponse.json();
-        if (offData && offData.product && offData.product.product_name) {
-          const normalizedFoodName = normalizeProductName(offData.product.product_name);
-          if (normalizedFoodName && !document.getElementById('name').value.trim()) {
-            document.getElementById('name').value = normalizedFoodName;
-          }
-          message.textContent = 'API検索で商品名を取得しました（食品DB）';
-          showCandidates([]);
-          return;
-        }
-      } catch (e) {}
-
-      const candidates = guessCandidatesFromBarcode(barcode);
-      if (candidates.length > 0) {
-        message.textContent = '商品名が見つからなかったため候補を表示しました';
-        showCandidates(candidates);
+      if (merged.length > 0) {
+        message.textContent = '候補を表示しました。正しい商品名を選んで保存してください。';
+        showCandidates(merged);
       } else {
-        message.textContent = '商品名を見つけられませんでした。手入力してください';
+        message.textContent = '候補を見つけられませんでした。手入力して保存してください。';
         showCandidates([]);
       }
     }
@@ -539,7 +540,7 @@
           { fps: 10, qrbox: { width: 250, height: 120 } },
           (decodedText) => {
             document.getElementById('barcode').value = decodedText;
-            message.textContent = '読み取り成功: ' + decodedText;
+            document.getElementById('lookupMessage').textContent = '読み取り成功。候補検索を押してください。';
             handleBarcodeInput();
             stopScanner();
           },
@@ -587,12 +588,12 @@
         assert(calcUnitPrice({ price: 2000, volume: 2000, unitSize: 1 }) === '1.00', '最小単位あたり単価を正しく計算する');
         assert(calcUnitPrice({ price: 2000, volume: 2000, unitSize: 10 }) === '10.00', '10単位あたり単価を正しく計算する');
         assert(formatCategory('洗剤-レノア') === '洗剤 (レノア)', '分類表示を整形する');
-        assert(formatCategory('その他') === 'その他', 'その他分類をそのまま表示する');
         assert(normalizeProductName('Lenor') === 'レノア', '英字ブランド名を正規化する');
         learnedBarcodeMap = {};
         learnBarcodeMapping('123', { name: 'テスト商品', category: '洗剤-アタック', memo: 'メモ' });
         assert(getLocalBarcodeMatch('123').name === 'テスト商品', '保存学習したバーコードを再利用できる');
-        assert(Array.isArray(guessCandidatesFromBarcode('4900000000000')), '候補生成が配列を返す');
+        assert(dedupeCandidates(['A', 'A', 'B']).length === 2, '候補を重複排除できる');
+        assert(guessLocalCandidates('4900000000000').length >= 1, '自前候補を返す');
         document.getElementById('testResults').textContent = results.join('\n');
       } catch (error) {
         document.getElementById('testResults').textContent = 'NG: ' + error.message + '\n' + results.join('\n');

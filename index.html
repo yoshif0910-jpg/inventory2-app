@@ -76,10 +76,9 @@
         <div>
           <label for="subCategory">洗剤種類</label>
           <select id="subCategory">
-            <option>アタック</option>
-            <option>レノア</option>
-            <option>レノアクエン酸IN</option>
-            <option>ハイター</option>
+            <option>洗剤</option>
+            <option>柔軟剤</option>
+            <option>漂白剤</option>
           </select>
         </div>
         <div></div>
@@ -192,9 +191,9 @@
     let yahooAppId = '';
 
     const defaultItems = [
-      { id: crypto.randomUUID(), name: 'アタックZERO', category: '洗剤-アタック', stock: 2, minStock: 1, price: 2033, volume: 2000, unitSize: 1, volumeUnit: 'mL', barcode: '4901301435933', memo: 'アタック液体史上 最高の清潔力' },
-      { id: crypto.randomUUID(), name: 'レノア クエン酸IN', category: '洗剤-レノアクエン酸IN', stock: 1, minStock: 1, price: 548, volume: 770, unitSize: 1, volumeUnit: 'mL', barcode: '', memo: 'クエン酸IN' },
-      { id: crypto.randomUUID(), name: 'ワイドハイターEX', category: '洗剤-ハイター', stock: 1, minStock: 1, price: 1265, volume: 2400, unitSize: 1, volumeUnit: 'mL', barcode: '', memo: '特大' },
+      { id: crypto.randomUUID(), name: 'アタックZERO', category: '洗剤-洗剤', stock: 2, minStock: 1, price: 2033, volume: 2000, unitSize: 1, volumeUnit: 'mL', barcode: '4901301435933', memo: 'アタック液体史上 最高の清潔力' },
+      { id: crypto.randomUUID(), name: 'レノア 超消臭1WEEK 極やわ仕上げ', category: '洗剤-柔軟剤', stock: 1, minStock: 1, price: 548, volume: 770, unitSize: 1, volumeUnit: 'mL', barcode: '', memo: '柔軟剤' },
+      { id: crypto.randomUUID(), name: 'ワイドハイターEX', category: '洗剤-漂白剤', stock: 1, minStock: 1, price: 1265, volume: 2400, unitSize: 1, volumeUnit: 'mL', barcode: '', memo: '漂白剤' },
       { id: crypto.randomUUID(), name: 'トイレットペーパー', category: '日用品', stock: 1, minStock: 1, price: 698, volume: 12, unitSize: 1, volumeUnit: '個', barcode: '', memo: '12ロール' },
       { id: crypto.randomUUID(), name: 'ティッシュ', category: '日用品', stock: 1, minStock: 1, price: 398, volume: 5, unitSize: 1, volumeUnit: '個', barcode: '', memo: '5箱' },
       { id: crypto.randomUUID(), name: '牛乳', category: '食料品', stock: 1, minStock: 1, price: 218, volume: 1000, unitSize: 100, volumeUnit: 'mL', barcode: '', memo: '1L' },
@@ -202,7 +201,7 @@
     ];
 
     const CATEGORY_DICTIONARY = {
-      '洗剤': ['アタックZERO', 'レノア クエン酸IN', 'ワイドハイターEX', 'レノア'],
+      '洗剤': ['アタックZERO', 'レノア 超消臭1WEEK 極やわ仕上げ', 'ワイドハイターEX', 'レノア クエン酸IN'],
       '日用品': ['トイレットペーパー', 'ティッシュ', 'キッチンペーパー', 'ゴミ袋', 'ラップ'],
       '食料品': ['牛乳', '食パン', 'パスタ', 'ヨーグルト', '卵'],
       'その他': ['その他商品']
@@ -399,18 +398,15 @@
 
     function autoSetCategoryFromName(name) {
       if (!name) return;
-      if (/アタックZERO/.test(name)) {
+      if (/アタックZERO|アタック/.test(name)) {
         document.getElementById('category').value = '洗剤';
-        document.getElementById('subCategory').value = 'アタック';
-      } else if (/レノア クエン酸IN/.test(name)) {
-        document.getElementById('category').value = '洗剤';
-        document.getElementById('subCategory').value = 'レノアクエン酸IN';
+        document.getElementById('subCategory').value = '洗剤';
       } else if (/レノア/.test(name)) {
         document.getElementById('category').value = '洗剤';
-        document.getElementById('subCategory').value = 'レノア';
+        document.getElementById('subCategory').value = '柔軟剤';
       } else if (/ハイター/.test(name)) {
         document.getElementById('category').value = '洗剤';
-        document.getElementById('subCategory').value = 'ハイター';
+        document.getElementById('subCategory').value = '漂白剤';
       } else if (/トイレットペーパー|ティッシュ|キッチンペーパー|ゴミ袋|ラップ/.test(name)) {
         document.getElementById('category').value = '日用品';
       } else if (/牛乳|食パン|パスタ|ヨーグルト|卵/.test(name)) {
@@ -461,12 +457,19 @@
 
       const grouped = {};
       items.forEach((item) => {
-        const mainCategory = getMainCategory(item.category);
+        let mainCategory = getMainCategory(item.category);
+
+        // 柔軟剤・漂白剤もすべて洗剤にまとめる
+        if (mainCategory === '洗剤') {
+          mainCategory = '洗剤';
+        }
         if (!grouped[mainCategory]) grouped[mainCategory] = [];
         grouped[mainCategory].push(item);
       });
 
-      Object.keys(grouped).forEach((categoryName) => {
+      // カテゴリ順を固定（洗剤を先頭）
+      const orderedKeys = Object.keys(grouped).sort((a, b) => (a === '洗剤' ? -1 : 1));
+      orderedKeys.forEach((categoryName) => {
         const section = document.createElement('div');
         section.className = 'card';
 
@@ -479,21 +482,23 @@
           const list = document.createElement('div');
 
           grouped[categoryName].forEach((item) => {
-            const row = document.createElement('div');
-            row.style.padding = '10px 0';
-            row.style.borderBottom = '1px solid #eef2f7';
-            row.style.display = 'flex';
-            row.style.justifyContent = 'space-between';
-            row.style.alignItems = 'center';
-            row.style.gap = '10px';
+            const wrapper = document.createElement('div');
+            wrapper.style.padding = '8px 0 14px 0';
 
-            const left = document.createElement('div');
-            left.innerHTML = `<strong>${escapeHtml(item.name)}</strong><span class="muted">（在庫 ${item.stock}）</span>`;
+            const nameRow = document.createElement('div');
+            nameRow.style.padding = '6px 0';
+            nameRow.style.fontSize = '18px';
+            nameRow.style.fontWeight = '700';
+            nameRow.innerHTML = `&emsp;${escapeHtml(item.name)} <span class="muted">在庫 ${item.stock}</span>`;
 
-            const right = document.createElement('div');
-            right.style.display = 'flex';
-            right.style.gap = '8px';
-            right.style.minWidth = '140px';
+            const buttonRow = document.createElement('div');
+            buttonRow.className = 'button-row';
+            buttonRow.style.display = 'grid';
+            buttonRow.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+            buttonRow.style.gap = '8px';
+            buttonRow.style.paddingLeft = '24px';
+            buttonRow.style.paddingRight = '8px';
+            buttonRow.style.marginTop = '4px';
 
             const useBtn = document.createElement('button');
             useBtn.className = 'secondary';
@@ -504,11 +509,24 @@
             buyBtn.textContent = '買った';
             buyBtn.onclick = () => changeStock(item.id, 1);
 
-            right.appendChild(useBtn);
-            right.appendChild(buyBtn);
-            row.appendChild(left);
-            row.appendChild(right);
-            list.appendChild(row);
+            const editBtn = document.createElement('button');
+            editBtn.className = 'secondary';
+            editBtn.textContent = '編集';
+            editBtn.onclick = () => editItem(item.id);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'danger';
+            deleteBtn.textContent = '削除';
+            deleteBtn.onclick = () => deleteItem(item.id);
+
+            buttonRow.appendChild(useBtn);
+            buttonRow.appendChild(buyBtn);
+            buttonRow.appendChild(editBtn);
+            buttonRow.appendChild(deleteBtn);
+
+            wrapper.appendChild(nameRow);
+            wrapper.appendChild(buttonRow);
+            list.appendChild(wrapper);
           });
 
           section.appendChild(list);
@@ -517,6 +535,7 @@
             const low = Number(item.stock) <= Number(item.minStock);
             const unitText = `${item.unitSize}${item.volumeUnit}あたり`;
             const mainCategory = getMainCategory(item.category);
+            // 洗剤は小分類を表示しない
             const subLabel = mainCategory !== '洗剤' && item.category.includes('-')
               ? item.category.split('-')[1]
               : '';
@@ -820,7 +839,7 @@
       try {
         assert(calcUnitPrice({ price: 2000, volume: 2000, unitSize: 1 }) === '1.00', '最小単位あたり単価を正しく計算する');
         assert(calcUnitPrice({ price: 2000, volume: 2000, unitSize: 10 }) === '10.00', '10単位あたり単価を正しく計算する');
-        assert(formatCategory('洗剤-レノア') === '洗剤 (レノア)', '分類表示を整形する');
+        assert(formatCategory('洗剤-柔軟剤') === '洗剤 (柔軟剤)', '分類表示を整形する');
         assert(normalizeProductName('Lenor') === 'レノア', '英字ブランド名を正規化する');
         learnedBarcodeMap = {};
         learnBarcodeMapping('123', { name: 'テスト商品', category: '洗剤-アタック', memo: 'メモ' });
@@ -832,7 +851,7 @@
         assert(pricedCandidates.some((c) => typeof c.price === 'number'), '候補に価格情報を含められる');
         assert(typeof fetchApiCandidates === 'function', 'Yahoo API対応の候補取得関数が存在する');
         assert(dedupeCandidates(['A', 'A', 'B']).length === 2, '候補の重複を排除する');
-        assert(getMainCategory('洗剤-アタック') === '洗剤', '大分類を取り出せる');
+        assert(getMainCategory('洗剤-漂白剤') === '洗剤', '大分類を取り出せる');
         const tempItems = [
           { id: '1', name: 'アタックZERO', category: '洗剤-アタック', stock: 1, volume: 2000, volumeUnit: 'mL' }
         ];

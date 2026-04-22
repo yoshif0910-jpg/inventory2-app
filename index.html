@@ -459,34 +459,96 @@
         shoppingList.innerHTML = lowItems.map((item) => `<div class="item"><strong>${escapeHtml(item.name)}</strong><br><span class="muted">現在庫 ${item.stock} / 最低在庫 ${item.minStock}</span></div>`).join('');
       }
 
+      const grouped = {};
       items.forEach((item) => {
-        const low = Number(item.stock) <= Number(item.minStock);
-        const unitText = `${item.unitSize}${item.volumeUnit}あたり`;
-        const div = document.createElement('div');
-        div.className = 'item';
-        div.innerHTML = `
-          <div class="item-top">
-            <div>
-              <h3>${escapeHtml(item.name)}</h3>
-              <span class="badge">${escapeHtml(formatCategory(item.category))}</span>
-              ${low ? '<span class="badge low">在庫少</span>' : ''}
-            </div>
-            <div><strong>在庫 ${item.stock}</strong></div>
-          </div>
-          <div class="price-box">
-            <div>価格: ${Number(item.price || 0).toLocaleString()}円</div>
-            <div>内容量: ${item.volume || '-'}${item.volumeUnit || ''}</div>
-            <div>${unitText}: ${calcUnitPrice(item)}円</div>
-            ${item.barcode ? `<div>バーコード: ${escapeHtml(item.barcode)}</div>` : ''}
-            ${item.memo ? `<div>メモ: ${escapeHtml(item.memo)}</div>` : ''}
-          </div>
-          <div class="button-row" style="margin-top:10px;">
-            <button class="secondary" onclick="changeStock('${item.id}', -1)">使った</button>
-            <button onclick="changeStock('${item.id}', 1)">買った</button>
-            <button class="secondary" onclick="editItem('${item.id}')">編集</button>
-            <button class="danger" onclick="deleteItem('${item.id}')">削除</button>
-          </div>`;
-        itemList.appendChild(div);
+        const mainCategory = getMainCategory(item.category);
+        if (!grouped[mainCategory]) grouped[mainCategory] = [];
+        grouped[mainCategory].push(item);
+      });
+
+      Object.keys(grouped).forEach((categoryName) => {
+        const section = document.createElement('div');
+        section.className = 'card';
+
+        const title = document.createElement('h3');
+        title.style.marginTop = '0';
+        title.textContent = categoryName;
+        section.appendChild(title);
+
+        if (categoryName === '洗剤') {
+          const list = document.createElement('div');
+
+          grouped[categoryName].forEach((item) => {
+            const row = document.createElement('div');
+            row.style.padding = '10px 0';
+            row.style.borderBottom = '1px solid #eef2f7';
+            row.style.display = 'flex';
+            row.style.justifyContent = 'space-between';
+            row.style.alignItems = 'center';
+            row.style.gap = '10px';
+
+            const left = document.createElement('div');
+            left.innerHTML = `<strong>${escapeHtml(item.name)}</strong><span class="muted">（在庫 ${item.stock}）</span>`;
+
+            const right = document.createElement('div');
+            right.style.display = 'flex';
+            right.style.gap = '8px';
+            right.style.minWidth = '140px';
+
+            const useBtn = document.createElement('button');
+            useBtn.className = 'secondary';
+            useBtn.textContent = '使った';
+            useBtn.onclick = () => changeStock(item.id, -1);
+
+            const buyBtn = document.createElement('button');
+            buyBtn.textContent = '買った';
+            buyBtn.onclick = () => changeStock(item.id, 1);
+
+            right.appendChild(useBtn);
+            right.appendChild(buyBtn);
+            row.appendChild(left);
+            row.appendChild(right);
+            list.appendChild(row);
+          });
+
+          section.appendChild(list);
+        } else {
+          grouped[categoryName].forEach((item) => {
+            const low = Number(item.stock) <= Number(item.minStock);
+            const unitText = `${item.unitSize}${item.volumeUnit}あたり`;
+            const mainCategory = getMainCategory(item.category);
+            const subLabel = mainCategory !== '洗剤' && item.category.includes('-')
+              ? item.category.split('-')[1]
+              : '';
+            const div = document.createElement('div');
+            div.className = 'item';
+            div.innerHTML = `
+              <div class="item-top">
+                <div>
+                  <h3>${escapeHtml(item.name)}</h3>
+                  ${subLabel ? `<span class="badge">${escapeHtml(subLabel)}</span>` : ''}
+                  ${low ? '<span class="badge low">在庫少</span>' : ''}
+                </div>
+                <div><strong>在庫 ${item.stock}</strong></div>
+              </div>
+              <div class="price-box">
+                <div>価格: ${Number(item.price || 0).toLocaleString()}円</div>
+                <div>内容量: ${item.volume || '-'}${item.volumeUnit || ''}</div>
+                <div>${unitText}: ${calcUnitPrice(item)}円</div>
+                ${item.barcode ? `<div>バーコード: ${escapeHtml(item.barcode)}</div>` : ''}
+                ${item.memo ? `<div>メモ: ${escapeHtml(item.memo)}</div>` : ''}
+              </div>
+              <div class="button-row" style="margin-top:10px;">
+                <button class="secondary" onclick="changeStock('${item.id}', -1)">使った</button>
+                <button onclick="changeStock('${item.id}', 1)">買った</button>
+                <button class="secondary" onclick="editItem('${item.id}')">編集</button>
+                <button class="danger" onclick="deleteItem('${item.id}')">削除</button>
+              </div>`;
+            section.appendChild(div);
+          });
+        }
+
+        itemList.appendChild(section);
       });
     }
 
@@ -606,12 +668,29 @@
         alert('商品名を入力してください');
         return;
       }
+
       const index = items.findIndex((x) => x.id === item.id);
       if (index >= 0) {
         items[index] = item;
       } else {
-        items.push(item);
+        const duplicateIndex = items.findIndex((x) =>
+          x.name === item.name &&
+          x.category === item.category &&
+          Number(x.volume || 0) === Number(item.volume || 0) &&
+          String(x.volumeUnit || '') === String(item.volumeUnit || '')
+        );
+
+        if (duplicateIndex >= 0) {
+          items[duplicateIndex].stock = Number(items[duplicateIndex].stock || 0) + Number(item.stock || 0 || 1);
+          if (!items[duplicateIndex].barcode && item.barcode) items[duplicateIndex].barcode = item.barcode;
+          if (!items[duplicateIndex].memo && item.memo) items[duplicateIndex].memo = item.memo;
+          if ((!items[duplicateIndex].price || Number(items[duplicateIndex].price) === 0) && item.price) items[duplicateIndex].price = item.price;
+          if ((!items[duplicateIndex].minStock || Number(items[duplicateIndex].minStock) === 0) && item.minStock) items[duplicateIndex].minStock = item.minStock;
+        } else {
+          items.push(item);
+        }
       }
+
       if (item.barcode) learnBarcodeMapping(item.barcode, item);
       saveItemsToStorage();
       resetForm();
@@ -753,6 +832,13 @@
         assert(pricedCandidates.some((c) => typeof c.price === 'number'), '候補に価格情報を含められる');
         assert(typeof fetchApiCandidates === 'function', 'Yahoo API対応の候補取得関数が存在する');
         assert(dedupeCandidates(['A', 'A', 'B']).length === 2, '候補の重複を排除する');
+        assert(getMainCategory('洗剤-アタック') === '洗剤', '大分類を取り出せる');
+        const tempItems = [
+          { id: '1', name: 'アタックZERO', category: '洗剤-アタック', stock: 1, volume: 2000, volumeUnit: 'mL' }
+        ];
+        const duplicateItem = { id: '2', name: 'アタックZERO', category: '洗剤-アタック', stock: 1, volume: 2000, volumeUnit: 'mL' };
+        const dupIndex = tempItems.findIndex((x) => x.name === duplicateItem.name && x.category === duplicateItem.category && Number(x.volume || 0) === Number(duplicateItem.volume || 0) && String(x.volumeUnit || '') === String(duplicateItem.volumeUnit || ''));
+        assert(dupIndex === 0, '同一商品の判定ができる');
         document.getElementById('testResults').textContent = results.join('\n');
       } catch (error) {
         document.getElementById('testResults').textContent = 'NG: ' + error.message + '\n' + results.join('\n');

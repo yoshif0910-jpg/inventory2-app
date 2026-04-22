@@ -459,6 +459,11 @@
       items.forEach((item) => {
         let mainCategory = getMainCategory(item.category);
 
+        // 柔軟剤・漂白剤もすべて洗剤に統合
+        if (mainCategory === '柔軟剤' || mainCategory === '漂白剤') {
+          mainCategory = '洗剤';
+        }
+
         // 柔軟剤・漂白剤もすべて洗剤にまとめる
         if (mainCategory === '洗剤') {
           mainCategory = '洗剤';
@@ -468,6 +473,10 @@
       });
 
       // カテゴリ順を固定（洗剤を先頭）
+      // 不要カテゴリ削除
+      delete grouped['柔軟剤'];
+      delete grouped['漂白剤'];
+
       const orderedKeys = Object.keys(grouped).sort((a, b) => (a === '洗剤' ? -1 : 1));
       orderedKeys.forEach((categoryName) => {
         const section = document.createElement('div');
@@ -481,7 +490,15 @@
         if (categoryName === '洗剤') {
           const list = document.createElement('div');
 
-          grouped[categoryName].forEach((item) => {
+          // 在庫少ない順に並び替え
+        grouped[categoryName].sort((a, b) => {
+          const aZero = Number(a.stock) === 0 ? 0 : 1;
+          const bZero = Number(b.stock) === 0 ? 0 : 1;
+          if (aZero !== bZero) return aZero - bZero;
+          return Number(a.stock) - Number(b.stock);
+        });
+
+        grouped[categoryName].forEach((item) => {
             const wrapper = document.createElement('div');
             wrapper.style.padding = '8px 0 14px 0';
 

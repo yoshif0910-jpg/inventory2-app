@@ -491,14 +491,21 @@
             nameRow.style.fontWeight = '700';
             nameRow.innerHTML = `&emsp;${escapeHtml(item.name)} <span class="muted">在庫 ${item.stock}</span>`;
 
-            const buttonRow = document.createElement('div');
-            buttonRow.className = 'button-row';
-            buttonRow.style.display = 'grid';
-            buttonRow.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
-            buttonRow.style.gap = '8px';
-            buttonRow.style.paddingLeft = '24px';
-            buttonRow.style.paddingRight = '8px';
-            buttonRow.style.marginTop = '4px';
+            const actionRow1 = document.createElement('div');
+            actionRow1.style.display = 'grid';
+            actionRow1.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+            actionRow1.style.gap = '8px';
+            actionRow1.style.paddingLeft = '24px';
+            actionRow1.style.paddingRight = '8px';
+            actionRow1.style.marginTop = '4px';
+
+            const actionRow2 = document.createElement('div');
+            actionRow2.style.display = 'grid';
+            actionRow2.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+            actionRow2.style.gap = '8px';
+            actionRow2.style.paddingLeft = '24px';
+            actionRow2.style.paddingRight = '8px';
+            actionRow2.style.marginTop = '4px';
 
             const useBtn = document.createElement('button');
             useBtn.className = 'secondary';
@@ -519,13 +526,14 @@
             deleteBtn.textContent = '削除';
             deleteBtn.onclick = () => deleteItem(item.id);
 
-            buttonRow.appendChild(useBtn);
-            buttonRow.appendChild(buyBtn);
-            buttonRow.appendChild(editBtn);
-            buttonRow.appendChild(deleteBtn);
+            actionRow1.appendChild(useBtn);
+            actionRow1.appendChild(buyBtn);
+            actionRow2.appendChild(editBtn);
+            actionRow2.appendChild(deleteBtn);
 
             wrapper.appendChild(nameRow);
-            wrapper.appendChild(buttonRow);
+            wrapper.appendChild(actionRow1);
+            wrapper.appendChild(actionRow2);
             list.appendChild(wrapper);
           });
 

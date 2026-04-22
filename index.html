@@ -302,36 +302,67 @@
       return [...new Set(candidates.filter(Boolean).map((name) => normalizeProductName(name)).filter(Boolean))];
     }
 
-    function scoreCandidate(name, barcode) {
+    function scoreCandidate(name, barcode, source='other') {
       const currentCategory = document.getElementById('category').value;
       let score = 0;
       if (!name) return score;
 
-      if (CATEGORY_DICTIONARY[currentCategory] && CATEGORY_DICTIONARY[currentCategory].includes(name)) score += 50;
-
+      // 学習・既存は強い
       const existingItem = items.find((item) => item.name === name);
-      if (existingItem) score += 40;
+      if (existingItem) score += 50;
+      if (source === 'learned') score += 80;
 
+      // APIの賢い優先ロジック
+      if (source === 'api') {
+        // 日本語含む
+        if (/[぀-ヿ一-龯]/.test(name)) score += 40;
+        // 短い名前
+        if (name.length <= 20) score += 20;
+        // キーワード一致
+        if (/アタック|レノア|ハイター|牛乳|食パン|ティッシュ/.test(name)) score += 30;
+      }
+
+      // カテゴリ一致
+      if (CATEGORY_DICTIONARY[currentCategory] && CATEGORY_DICTIONARY[currentCategory].includes(name)) score += 40;
+
+      // カテゴリ別キーワード
       if (currentCategory === '洗剤' && /アタック|レノア|ハイター/.test(name)) score += 30;
       if (currentCategory === '日用品' && /トイレットペーパー|ティッシュ|キッチンペーパー|ゴミ袋|ラップ/.test(name)) score += 30;
       if (currentCategory === '食料品' && /牛乳|食パン|パスタ|ヨーグルト|卵/.test(name)) score += 30;
 
+      // 日本コード
       if (barcode && barcode.startsWith('49')) score += 5;
-      if (name.length <= 20) score += 5;
 
       return score;
     }
 
     function buildStrongCandidates(barcode, apiCandidates) {
       const currentCategory = document.getElementById('category').value;
-      const learned = barcode && learnedBarcodeMap[barcode] ? [learnedBarcodeMap[barcode].name] : [];
+
+      const learned = barcode && learnedBarcodeMap[barcode]
+        ? [{ name: learnedBarcodeMap[barcode].name, source: 'learned' }]
+        : [];
+
       const existing = items
         .filter((item) => getMainCategory(item.category) === currentCategory)
-        .map((item) => item.name);
-      const categoryCandidates = CATEGORY_DICTIONARY[currentCategory] || [];
-      const merged = dedupeCandidates([...learned, ...existing, ...categoryCandidates, ...apiCandidates]);
+        .map((item) => ({ name: item.name, source: 'existing' }));
+
+      const categoryCandidates = (CATEGORY_DICTIONARY[currentCategory] || []).map((name) => ({ name, source: 'category' }));
+
+      const api = apiCandidates.map((name) => ({ name, source: 'api' }));
+
+      const mergedRaw = [...learned, ...api, ...existing, ...categoryCandidates];
+
+      const uniqueMap = {};
+      mergedRaw.forEach((item) => {
+        const key = normalizeProductName(item.name);
+        if (!uniqueMap[key]) uniqueMap[key] = item.source;
+      });
+
+      const merged = Object.keys(uniqueMap).map((name) => ({ name, source: uniqueMap[name] }));
+
       return merged
-        .map((name) => ({ name, score: scoreCandidate(name, barcode) }))
+        .map((item) => ({ name: item.name, score: scoreCandidate(item.name, barcode, item.source) }))
         .sort((a, b) => b.score - a.score)
         .map((x) => x.name)
         .slice(0, 3);

@@ -164,6 +164,24 @@
     </div>
 
     <div class="card">
+      <h2 style="margin-top:0;">検索</h2>
+      <div class="row">
+        <div>
+          <input id="searchKeyword" placeholder="商品名で検索" oninput="render()" />
+        </div>
+        <div>
+          <select id="filterCategory" onchange="render()">
+            <option value="">すべてのカテゴリ</option>
+            <option value="洗剤">洗剤</option>
+            <option value="日用品">日用品</option>
+            <option value="食料品">食料品</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2 style="margin-top:0;">買い物リスト</h2>
       <div id="shoppingList" class="muted">買い足しが必要な商品はありません</div>
     </div>
@@ -443,9 +461,17 @@
       const itemList = document.getElementById('itemList');
       const shoppingList = document.getElementById('shoppingList');
       itemList.innerHTML = '';
-      const lowItems = items.filter((item) => Number(item.stock) <= Number(item.minStock));
-      const totalStock = items.reduce((sum, item) => sum + Number(item.stock || 0), 0);
-      document.getElementById('statItems').textContent = items.length;
+      const keyword = (document.getElementById('searchKeyword')?.value || '').trim().toLowerCase();
+      const filterCategory = document.getElementById('filterCategory')?.value || '';
+      const filteredItems = items.filter((item) => {
+        const matchKeyword = !keyword || String(item.name || '').toLowerCase().includes(keyword);
+        const matchCategory = !filterCategory || getMainCategory(item.category) === filterCategory;
+        return matchKeyword && matchCategory;
+      });
+
+      const lowItems = filteredItems.filter((item) => Number(item.stock) <= Number(item.minStock));
+      const totalStock = filteredItems.reduce((sum, item) => sum + Number(item.stock || 0), 0);
+      document.getElementById('statItems').textContent = filteredItems.length;
       document.getElementById('statStock').textContent = totalStock;
       document.getElementById('statLow').textContent = lowItems.length;
 
@@ -456,7 +482,7 @@
       }
 
       const grouped = {};
-      items.forEach((item) => {
+      filteredItems.forEach((item) => {
         let mainCategory = getMainCategory(item.category);
 
         // 柔軟剤・漂白剤もすべて洗剤に統合
@@ -876,6 +902,10 @@
         assert(pricedCandidates.some((c) => typeof c.price === 'number'), '候補に価格情報を含められる');
         assert(typeof fetchApiCandidates === 'function', 'Yahoo API対応の候補取得関数が存在する');
         assert(dedupeCandidates(['A', 'A', 'B']).length === 2, '候補の重複を排除する');
+        const sampleSearch = [{ name: 'アタックZERO' }, { name: 'レノア' }].filter((item) => String(item.name).toLowerCase().includes('アタ'.toLowerCase()));
+        assert(sampleSearch.length === 1 && sampleSearch[0].name === 'アタックZERO', '商品名で絞り込みできる');
+        const sampleCategory = [{ category: '洗剤-洗剤' }, { category: '日用品' }].filter((item) => getMainCategory(item.category) === '洗剤');
+        assert(sampleCategory.length === 1, 'カテゴリで絞り込みできる');
         assert(getMainCategory('洗剤-漂白剤') === '洗剤', '大分類を取り出せる');
         const tempItems = [
           { id: '1', name: 'アタックZERO', category: '洗剤-アタック', stock: 1, volume: 2000, volumeUnit: 'mL' }

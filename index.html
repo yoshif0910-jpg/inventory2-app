@@ -329,10 +329,11 @@
       if (!name) return score;
 
       const existingItem = items.find((item) => item.name === name);
-      if (existingItem) score += 50;
-      if (source === 'learned') score += 80;
+      if (existingItem) score += 40; // APIより少し下
+      if (source === 'learned') score += 100; // 最優先
 
       if (source === 'api') {
+        score += 70; // Yahoo/APIを強く優先
         if (/[\u3040-\u30ff\u4e00-\u9faf]/.test(name)) score += 40;
         if (name.length <= 20) score += 20;
         if (/アタック|レノア|ハイター|牛乳|食パン|ティッシュ/.test(name)) score += 30;

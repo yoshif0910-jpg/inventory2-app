@@ -301,20 +301,39 @@
         box.classList.add('hidden');
         return;
       }
+
+      const prices = candidates
+        .map((candidate) => typeof candidate === 'string' ? null : candidate.price)
+        .filter((price) => typeof price === 'number' && !Number.isNaN(price));
+      const lowestPrice = prices.length ? Math.min(...prices) : null;
+
       candidates.forEach((candidate) => {
+        const candidateObj = typeof candidate === 'string'
+          ? { name: candidate, price: null, source: 'other' }
+          : candidate;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'secondary';
-        btn.textContent = candidate;
-        btn.onclick = () => applyCandidate(candidate);
+
+        const isLowest = lowestPrice !== null && candidateObj.price === lowestPrice;
+        const priceText = typeof candidateObj.price === 'number' ? ` ¥${candidateObj.price.toLocaleString()}` : '';
+        const badge = isLowest ? ' ★最安' : '';
+        btn.textContent = `${candidateObj.name}${priceText}${badge}`;
+        btn.onclick = () => applyCandidate(candidateObj);
         area.appendChild(btn);
       });
       box.classList.remove('hidden');
     }
 
     function applyCandidate(candidate) {
-      document.getElementById('name').value = candidate;
-      autoSetCategoryFromName(candidate);
+      const candidateObj = typeof candidate === 'string'
+        ? { name: candidate, price: null, source: 'other' }
+        : candidate;
+      document.getElementById('name').value = candidateObj.name;
+      if (typeof candidateObj.price === 'number' && !document.getElementById('price').value) {
+        document.getElementById('price').value = candidateObj.price;
+      }
+      autoSetCategoryFromName(candidateObj.name);
       document.getElementById('lookupMessage').textContent = '候補を適用しました。保存すると次回から学習済みとして扱います。';
       showCandidates([]);
     }
@@ -350,25 +369,31 @@
 
     function buildStrongCandidates(barcode, apiCandidates) {
       const currentCategory = document.getElementById('category').value;
-      const learned = barcode && learnedBarcodeMap[barcode] ? [{ name: learnedBarcodeMap[barcode].name, source: 'learned' }] : [];
+      const learned = barcode && learnedBarcodeMap[barcode]
+        ? [{ name: learnedBarcodeMap[barcode].name, price: learnedBarcodeMap[barcode].price ?? null, source: 'learned' }]
+        : [];
       const existing = items
         .filter((item) => getMainCategory(item.category) === currentCategory)
-        .map((item) => ({ name: item.name, source: 'existing' }));
-      const categoryCandidates = (CATEGORY_DICTIONARY[currentCategory] || []).map((name) => ({ name, source: 'category' }));
-      const api = apiCandidates.map((name) => ({ name, source: 'api' }));
+        .map((item) => ({ name: item.name, price: item.price ?? null, source: 'existing' }));
+      const categoryCandidates = (CATEGORY_DICTIONARY[currentCategory] || []).map((name) => ({ name, price: null, source: 'category' }));
+      const api = apiCandidates.map((item) => typeof item === 'string' ? ({ name: item, price: null, source: 'api' }) : ({ ...item, source: item.source || 'api' }));
 
       const mergedRaw = [...learned, ...api, ...existing, ...categoryCandidates];
       const uniqueMap = {};
       mergedRaw.forEach((item) => {
         const key = normalizeProductName(item.name);
-        if (!uniqueMap[key]) uniqueMap[key] = item.source;
+        if (!uniqueMap[key]) {
+          uniqueMap[key] = { name: key, price: item.price ?? null, source: item.source };
+        } else {
+          if (uniqueMap[key].price == null && item.price != null) uniqueMap[key].price = item.price;
+          if (uniqueMap[key].source !== 'learned' && item.source === 'learned') uniqueMap[key].source = 'learned';
+          else if (uniqueMap[key].source === 'category' && item.source !== 'category') uniqueMap[key].source = item.source;
+        }
       });
 
-      const merged = Object.keys(uniqueMap).map((name) => ({ name, source: uniqueMap[name] }));
-      return merged
-        .map((item) => ({ name: item.name, score: scoreCandidate(item.name, barcode, item.source) }))
+      return Object.values(uniqueMap)
+        .map((item) => ({ ...item, score: scoreCandidate(item.name, barcode, item.source) }))
         .sort((a, b) => b.score - a.score)
-        .map((x) => x.name)
         .slice(0, 3);
     }
 
@@ -396,7 +421,7 @@
 
     function learnBarcodeMapping(barcode, item) {
       if (!barcode || !item || !item.name) return;
-      learnedBarcodeMap[barcode] = { name: item.name, category: item.category, memo: item.memo || '' };
+      learnedBarcodeMap[barcode] = { name: item.name, category: item.category, memo: item.memo || '', price: item.price ?? null };
       saveLearnedBarcodeMap();
     }
 
@@ -488,13 +513,15 @@
 
       if (yahooAppId) {
         try {
-          const yahooUrl = `https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch?appid=${encodeURIComponent(yahooAppId)}&jan_code=${encodeURIComponent(barcode)}&results=3&sort=-score`;
+          const yahooUrl = `https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch?appid=${encodeURIComponent(yahooAppId)}&jan_code=${encodeURIComponent(barcode)}&results=5&sort=-score`;
           const yahooResponse = await fetch(yahooUrl, { headers: { Accept: 'application/json' } });
           if (yahooResponse.ok) {
             const yahooData = await yahooResponse.json();
             if (yahooData && Array.isArray(yahooData.hits)) {
               yahooData.hits.forEach((hit) => {
-                if (hit && hit.name) candidates.push(hit.name);
+                if (hit && hit.name) {
+                  candidates.push({ name: hit.name, price: typeof hit.price === 'number' ? hit.price : null, source: 'api' });
+                }
               });
             }
           }
@@ -507,7 +534,9 @@
           const data = await response.json();
           if (data && Array.isArray(data.items)) {
             data.items.forEach((item) => {
-              if (item && item.title) candidates.push(item.title);
+              if (item && item.title) {
+                candidates.push({ name: item.title, price: null, source: 'api' });
+              }
             });
           }
         }
@@ -518,13 +547,23 @@
         if (offResponse.ok) {
           const offData = await offResponse.json();
           if (offData && offData.product) {
-            if (offData.product.product_name) candidates.push(offData.product.product_name);
-            if (offData.product.product_name_ja) candidates.push(offData.product.product_name_ja);
+            if (offData.product.product_name) candidates.push({ name: offData.product.product_name, price: null, source: 'api' });
+            if (offData.product.product_name_ja) candidates.push({ name: offData.product.product_name_ja, price: null, source: 'api' });
           }
         }
       } catch (e) {}
 
-      return dedupeCandidates(candidates);
+      const normalizedMap = {};
+      candidates.forEach((item) => {
+        const key = normalizeProductName(item.name);
+        if (!key) return;
+        if (!normalizedMap[key]) {
+          normalizedMap[key] = { name: key, price: item.price ?? null, source: item.source || 'api' };
+        } else if (normalizedMap[key].price == null && item.price != null) {
+          normalizedMap[key].price = item.price;
+        }
+      });
+      return Object.values(normalizedMap);
     }
 
     async function lookupProductName() {
@@ -707,8 +746,11 @@
         learnedBarcodeMap = {};
         learnBarcodeMapping('123', { name: 'テスト商品', category: '洗剤-アタック', memo: 'メモ' });
         assert(getLocalBarcodeMatch('123').name === 'テスト商品', '保存学習したバーコードを再利用できる');
-        assert(buildStrongCandidates('4900000000000', ['アタックZERO', '牛乳']).length <= 3, '候補は最大3件');
-        assert(buildStrongCandidates('4900000000000', ['アタックZERO'])[0] === 'アタックZERO', '有力候補を上位に並べる');
+        assert(buildStrongCandidates('4900000000000', [{ name: 'アタックZERO', price: 2000, source: 'api' }, { name: '牛乳', price: 220, source: 'api' }]).length <= 3, '候補は最大3件');
+        assert(buildStrongCandidates('4900000000000', [{ name: 'アタックZERO', price: 2000, source: 'api' }])[0].name === 'アタックZERO', '有力候補を上位に並べる');
+        const pricedCandidates = buildStrongCandidates('4900000000000', [{ name: 'アタックZERO', price: 1800, source: 'api' }, { name: 'レノア クエン酸IN', price: 2000, source: 'api' }]);
+        assert(typeof pricedCandidates[0] === 'object', '候補に価格オブジェクトを保持する');
+        assert(pricedCandidates.some((c) => typeof c.price === 'number'), '候補に価格情報を含められる');
         assert(typeof fetchApiCandidates === 'function', 'Yahoo API対応の候補取得関数が存在する');
         assert(dedupeCandidates(['A', 'A', 'B']).length === 2, '候補の重複を排除する');
         document.getElementById('testResults').textContent = results.join('\n');
